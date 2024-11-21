@@ -17,7 +17,7 @@
               </template>
             </q-img>
             <q-responsive v-else :ratio="2 / 3">
-              <q-skeleton class="fit" />
+              <q-skeleton class="fit" :animation="generalSetting.eInkMode ? 'none' : 'wave'" />
             </q-responsive>
           </div>
           <q-responsive v-else :ratio="2 / 3" />

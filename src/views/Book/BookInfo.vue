@@ -26,7 +26,7 @@
                 </template>
               </q-img>
               <q-responsive v-else :ratio="2 / 3">
-                <q-skeleton class="fit" square />
+                <q-skeleton class="fit" square :animation="generalSetting.eInkMode ? 'none' : 'wave'" />
               </q-responsive>
             </q-card>
           </q-grid-item>
@@ -69,17 +69,17 @@
               </div>
             </div>
             <div v-else class="q-gutter-md">
-              <q-skeleton />
-              <q-skeleton width="50%" />
-              <q-skeleton />
-              <q-skeleton />
-              <q-skeleton />
-              <q-skeleton height="150px" />
+              <q-skeleton :animation="generalSetting.eInkMode ? 'none' : 'wave'" />
+              <q-skeleton width="50%" :animation="generalSetting.eInkMode ? 'none' : 'wave'" />
+              <q-skeleton :animation="generalSetting.eInkMode ? 'none' : 'wave'" />
+              <q-skeleton :animation="generalSetting.eInkMode ? 'none' : 'wave'" />
+              <q-skeleton :animation="generalSetting.eInkMode ? 'none' : 'wave'" />
+              <q-skeleton height="150px" :animation="generalSetting.eInkMode ? 'none' : 'wave'" />
               <div></div>
               <div>
                 <div class="row q-gutter-x-md">
-                  <q-skeleton type="QBtn" />
-                  <q-skeleton type="QBtn" />
+                  <q-skeleton type="QBtn" :animation="generalSetting.eInkMode ? 'none' : 'wave'" />
+                  <q-skeleton type="QBtn" :animation="generalSetting.eInkMode ? 'none' : 'wave'" />
                 </div>
               </div>
             </div>
@@ -139,7 +139,7 @@ import { parseTime } from 'src/utils/time'
 const props = defineProps<{ bid: string }>()
 
 const settingStore = useSettingStore()
-const { generalSetting } = settingStore // 引入setting用于控制图片自定义占位符
+const { generalSetting, readSetting } = settingStore // 引入setting用于控制图片自定义占位符
 const $q = useQuasar()
 const router = useRouter()
 const appStore = useAppStore()

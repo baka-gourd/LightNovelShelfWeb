@@ -12,12 +12,12 @@
       <q-card-section>
         <html-reader v-if="isActive" :html="sanitizerHtml(announcement.Content)"></html-reader>
         <div v-else>
-          <q-skeleton type="text" height="50px" width="50%" />
-          <q-skeleton type="text" />
-          <q-skeleton type="text" />
-          <q-skeleton type="text" />
-          <q-skeleton type="text" height="50px" />
-          <q-skeleton type="text" height="100px" />
+          <q-skeleton type="text" height="50px" width="50%" :animation="generalSetting.eInkMode ? 'none' : 'wave'" />
+          <q-skeleton type="text" :animation="generalSetting.eInkMode ? 'none' : 'wave'" />
+          <q-skeleton type="text" :animation="generalSetting.eInkMode ? 'none' : 'wave'" />
+          <q-skeleton type="text" :animation="generalSetting.eInkMode ? 'none' : 'wave'" />
+          <q-skeleton type="text" height="50px" :animation="generalSetting.eInkMode ? 'none' : 'wave'" />
+          <q-skeleton type="text" height="100px" :animation="generalSetting.eInkMode ? 'none' : 'wave'" />
         </div>
       </q-card-section>
     </q-card>
@@ -38,11 +38,13 @@ import { useInitRequest } from 'src/composition/biz/useInitRequest'
 import { CommentType } from 'src/services/comment/types'
 import { useAppStore } from 'stores/app'
 import HtmlReader from 'components/html/HtmlReader.vue'
+import { useSettingStore } from 'src/stores/setting'
 
 const props = defineProps<{ id: string | number }>()
 const _id = computed(() => ~~(props.id || '1'))
 
 const appStore = useAppStore()
+const { generalSetting } = useSettingStore()
 const user = computed(() => appStore.user)
 const announcement = ref<Announcement>()
 

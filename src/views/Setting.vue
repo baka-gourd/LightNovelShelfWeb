@@ -37,12 +37,20 @@
               <div class="q-gutter-xs light-radio q-mt-md">
                 <div class="text-subtitle1">其他选项</div>
                 <q-toggle v-model="generalSetting.enableBlurHash" label="打开书籍封面自定义占位符" />
+                <q-toggle v-model="generalSetting.eInkMode" label="墨水屏模式" />
               </div>
             </div>
           </q-tab-panel>
 
           <q-tab-panel name="Read">
             <div class="q-pa-md">
+              <div class="q-gutter-xs bg-radio">
+                <div class="text-subtitle1">阅读器模式</div>
+                <q-radio v-model="readSetting.readerMode" val="normal" label="普通" />
+                <q-radio v-model="readSetting.readerMode" val="page" label="分页1" />
+                <q-radio v-model="readSetting.readerMode" val="page-2" label="分页2" />
+              </div>
+              <q-separator />
               <div class="q-gutter-xs bg-radio">
                 <div class="text-subtitle1">阅读背景</div>
                 <q-radio v-model="readSetting.bgType" val="none" label="无" />

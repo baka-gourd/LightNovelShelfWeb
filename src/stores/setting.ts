@@ -10,7 +10,8 @@ export const useSettingStore = defineStore('app.setting', {
     generalSetting: {
       enableBlurHash: true,
       globalWidth: 100,
-      ignoreJapanese: false
+      ignoreJapanese: false,
+      eInkMode: false
     },
     readSetting: {
       fontSize: 16,
@@ -22,7 +23,8 @@ export const useSettingStore = defineStore('app.setting', {
       justify: false,
       showButton: true,
       tapToScroll: false,
-      hideFullScreen: false
+      hideFullScreen: false,
+      readerMode: 'normal' as 'page' | 'page-2' | 'normal'
     },
     editorSetting: {
       mode: 'html' as 'html' | 'markdown'

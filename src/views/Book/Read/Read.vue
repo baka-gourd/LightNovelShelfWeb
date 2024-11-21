@@ -1,12 +1,17 @@
 <template>
   <q-page padding class="q-mx-auto container">
     <div v-if="loading">
-      <q-skeleton type="text" height="50px" width="50%" />
-      <q-skeleton type="text" />
-      <q-skeleton type="text" />
-      <q-skeleton type="text" />
-      <q-skeleton type="text" height="50px" />
-      <q-skeleton type="text" height="100px" />
+      <q-skeleton
+        type="text"
+        height="50px"
+        width="50%"
+        :animation="settingStore.generalSetting.eInkMode ? 'none' : 'wave'"
+      />
+      <q-skeleton type="text" :animation="settingStore.generalSetting.eInkMode ? 'none' : 'wave'" />
+      <q-skeleton type="text" :animation="settingStore.generalSetting.eInkMode ? 'none' : 'wave'" />
+      <q-skeleton type="text" :animation="settingStore.generalSetting.eInkMode ? 'none' : 'wave'" />
+      <q-skeleton type="text" height="50px" :animation="settingStore.generalSetting.eInkMode ? 'none' : 'wave'" />
+      <q-skeleton type="text" height="100px" :animation="settingStore.generalSetting.eInkMode ? 'none' : 'wave'" />
     </div>
     <div v-else>
       <div class="read-bg absolute-top-left fit" :style="bgStyle" />
@@ -17,7 +22,16 @@
           style="position: relative; z-index: 1"
           ref="readerRef"
           class="read"
+          v-if="readSetting.readerMode === 'normal'"
         ></html-reader>
+        <page-reader
+          :html="chapterContent"
+          :style="readStyle"
+          style="position: relative; z-index: 1"
+          ref="readerRef"
+          class="read"
+          v-else
+        ></page-reader>
         <q-tooltip
           :target="note.target"
           class="note-style"
@@ -146,6 +160,7 @@ import { getErrMsg } from 'src/utils/getErrMsg'
 import { delay } from 'src/utils/delay'
 import { NOOP } from 'src/const/empty'
 import HtmlReader from 'components/html/HtmlReader.vue'
+import PageReader from 'components/html/PageReader.vue'
 import { PROVIDE } from 'src/const/provide'
 import { onClickOutside } from '@vueuse/core'
 import DragPageSticky from 'components/DragPageSticky.vue'
