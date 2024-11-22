@@ -47,10 +47,27 @@
               <div class="q-gutter-xs bg-radio">
                 <div class="text-subtitle1">阅读器模式</div>
                 <q-radio v-model="readSetting.readerMode" val="normal" label="普通" />
-                <q-radio v-model="readSetting.readerMode" val="page" label="分页1" />
-                <q-radio v-model="readSetting.readerMode" val="page-2" label="分页2" />
+                <q-radio v-model="readSetting.readerMode" val="page" label="分页" />
               </div>
               <q-separator />
+              <div v-show="readSetting.readerMode === 'page'">
+                <div class="q-gutter-xs bg-radio">
+                  <div class="text-subtitle1">分页选项</div>
+                  <q-radio v-model="readSetting.pageReader.splitMethod" val="classic" label="经典" />
+                  <q-radio v-model="readSetting.pageReader.splitMethod" val="advance" label="高级" />
+                </div>
+                <q-separator />
+                <div class="q-gutter-xs bg-radio">
+                  <div class="text-subtitle1">分页方式</div>
+                  <q-radio v-model="readSetting.pageReader.splitMode" val="source-gen" label="源生成" />
+                  <q-radio v-model="readSetting.pageReader.splitMode" val="pointer" label="指针" disable />
+                </div>
+                <q-separator />
+                <div class="text-subtitle1">选项</div>
+                <q-toggle v-model="readSetting.pageReader.enableTouchNavigation" label="点击翻页" />
+                <q-toggle v-model="readSetting.pageReader.enableAutoNextChapter" label="自动下一章" />
+                <q-separator />
+              </div>
               <div class="q-gutter-xs bg-radio">
                 <div class="text-subtitle1">阅读背景</div>
                 <q-radio v-model="readSetting.bgType" val="none" label="无" />
@@ -77,6 +94,7 @@
                 <q-toggle
                   v-model="readSetting.showButton"
                   :label="readSetting.showButton ? '显示底部按钮' : '隐藏底部按钮'"
+                  :disable="readSetting.readerMode === 'page'"
                 />
                 <q-toggle v-model="readSetting.tapToScroll" label="点击边缘滚动页面" />
                 <q-toggle v-model="readSetting.hideFullScreen" label="隐藏全屏按钮" />

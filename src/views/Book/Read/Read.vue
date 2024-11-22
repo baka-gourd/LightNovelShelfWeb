@@ -44,7 +44,7 @@
         </q-tooltip>
       </div>
       <div
-        v-if="readSetting['showButton']"
+        v-if="readSetting['showButton'] && readSetting['readerMode'] !== 'page'"
         class="row justify-between q-gutter-md"
         style="margin-top: 24px; clear: both"
       >

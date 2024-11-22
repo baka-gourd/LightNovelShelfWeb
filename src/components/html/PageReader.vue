@@ -3,8 +3,10 @@
     id="patchouli-reader"
     ref="patchouliReader"
     class="html-reader print-hide"
-    style="height: 700px"
+    :style="['--offset:' + headerOffset + 'px']"
     @click="clickHandle"
+    @touchstart="handleTouchStart"
+    @touchend="handleTouchEnd"
   >
     <!-- 内容区域 -->
     <div id="patchouli-content" ref="patchouliContent"></div>
@@ -33,11 +35,14 @@ import { useLayout } from '../app/useLayout'
 import { useSettingStore } from 'src/stores/setting'
 import { PROVIDE } from 'src/const/provide'
 
+const globalTestDivCounter = ref(0)
+const rawDOMtree = ref<HTMLElement>()
 const rawElements = ref<HTMLElement[]>() // 原始html内容 这里面不知道为什么开启高级切分器后有可能进屎
 // let rawElements: undefined | HTMLElement[] = undefined; // 原始html内容 这里面不知道为什么开启高级切分器后有可能进屎
 const pages = ref<HTMLElement[][]>([]) // 页面的元素数组，每页元素为 HTMLElement 数组
 const currentPage = ref(0)
-const maxHeight = ref(600) // 单页最大高度
+const maxHeight = ref() // 单页最大高度
+const last_reader_width = ref(0)
 const readerWidth = ref(0)
 const fontSize = ref(16) // 正文字体大小（默认16px）
 const headingFontSize = ref(24) // 各级标题的字体大小（默认24px）
@@ -56,6 +61,8 @@ const LONG_PRESS_THRESHOLD = ref(500) // 长按阈值（毫秒）
 const totalPages = computed(() => pages.value.length)
 const displayReadProgress = computed(() => readProgress.value * 100)
 
+let resizeObserver = ref<ResizeObserver>()
+
 // 高阶分页支持
 const flag_high_level_paged_engine = ref(true)
 //TODO 依赖于深拷贝运行 但是不启用目前也没有去掉深拷贝（安全性）
@@ -64,9 +71,9 @@ const flag_single_page_mode = ref(false)
 // 启用激进分页模式 目前一直开着
 const flag_aggressive_paging_engine = ref(false)
 // 激进分页模式的阈值 小于这个就进行激进分页
-const aggressive_paging_threshold = 0.95 // 默认值为 0.9
+const aggressive_paging_threshold = 0.99 // 默认值为 0.9
 // 分页模式的阈值 小于这个就进行分页
-const paging_threshold = 0.95 // 默认值为 0.9
+const paging_threshold = 0.99 // 默认值为 0.9
 
 const flag_flatten_DOM = ref(true)
 // 依赖展平dom树的方法来实现渲染
@@ -112,7 +119,7 @@ function clickHandle(event: Event) {
     event.preventDefault()
     readerHandleLinkClick(target)
   } else {
-    manageScrollClick(event)
+    handleClick(<MouseEvent>event)
   }
 }
 
@@ -153,42 +160,43 @@ function makeUrl(link: string) {
   return null
 }
 
-function manageScrollClick(event: any) {
-  // @ts-ignore
-  if (readSetting.tapToScroll && !imagePreview.isShow) {
-    let h = window.innerHeight
-    if (event.y < 0.25 * h || event.y > 0.75 * h) {
-      let target = scroll.getScrollTarget(patchouliContent.value)
-      let offset = scroll.getVerticalScrollPosition(target)
-      scroll.setVerticalScrollPosition(target, event.y < 0.25 * h ? offset - h * 0.75 : offset + h * 0.75, 200) // 最后一个参数为duration
-    }
-  }
-}
-
 const handleResize = () => {
   if (patchouliReader.value) {
     readerWidth.value = patchouliReader.value.offsetWidth
+    last_reader_width.value = readerWidth.value
     maxHeight.value = patchouliReader.value.offsetHeight
   }
 }
 
-// 点击翻页处理函数
 const handleClick = (event: MouseEvent) => {
+  if (!patchouliReader.value) return // 如果组件未挂载，直接返回
+
   // 检查是否存在选中的文本
   const selection = window.getSelection()
   if (selection && selection.toString().length > 0) {
     return // 如果有选中文本，则忽略点击事件
   }
 
-  const clickX = event.clientX
-  const screenWidth = window.innerWidth
-  const edgeWidth = screenWidth * 0.2 // 边缘区域为 20%
+  // 获取组件的位置和大小
+  const rect = patchouliReader.value.getBoundingClientRect()
 
-  if (clickX < edgeWidth) {
+  // 获取点击位置相对于组件的坐标
+  const clickXInComponent = event.clientX - rect.left
+  console.log('clickX:', event.clientX)
+  console.log('clickXInComponent:', clickXInComponent)
+
+  const edgeWidth = rect.width * 0.2 // 边缘区域为组件宽度的 20%
+
+  // 判断点击位置是否在左侧边缘区域
+  if (clickXInComponent < edgeWidth) {
     prevPage() // 点击左侧20%区域
-  } else if (clickX > screenWidth - edgeWidth) {
+  }
+  // 判断点击位置是否在右侧边缘区域
+  else if (clickXInComponent > rect.width - edgeWidth) {
     nextPage() // 点击右侧20%区域
-  } else {
+  }
+  // 如果点击位置在中间部分
+  else {
     onReaderClick.value = true // 非边缘区域点击
   }
 }
@@ -259,6 +267,16 @@ const handleLongPress = () => {
   // 在此处理长按事件逻辑
 }
 
+const getParentTextContent = (element: HTMLElement): string => {
+  let directText = ''
+  Array.from(element.childNodes).forEach((child) => {
+    if (child instanceof Text) {
+      directText += child.nodeValue?.trim() || ''
+    }
+  })
+  return directText
+}
+
 const flattenDOM = (node: Node, flattenCompletely: boolean, parentClassPath = ''): HTMLElement[] => {
   const elements: HTMLElement[] = []
 
@@ -266,24 +284,40 @@ const flattenDOM = (node: Node, flattenCompletely: boolean, parentClassPath = ''
     if (child.nodeType === Node.ELEMENT_NODE) {
       const element = child as HTMLElement
 
-      if (flattenCompletely) {
-        // 生成嵌套标识类名
-        const parentClass = (node as HTMLElement).className || ''
-        const sanitizedParentClass = parentClass
-          .replace(/[^a-zA-Z0-9_-]/g, '-') // 替换非法字符
-          .replace(/^-+|-+$/g, '') // 去除首尾短横线
+      // 如果当前元素是 <ruby> 元素，直接保留
+      if (element.nodeName === 'RUBY') {
+        elements.push(element)
+        return
+      }
 
-        const classPath = parentClassPath ? `${parentClassPath}__${sanitizedParentClass}` : sanitizedParentClass
+      // 如果没有子元素，跳过展平，直接保留该元素
+      if (!element.childNodes.length) {
+        elements.push(element)
+        return
+      }
+
+      // 如果子元素只有 <ruby> 元素，保留 <ruby> 元素及其结构
+      const hasOnlyRubyChild = Array.from(element.childNodes).every((childNode) => childNode.nodeName === 'RUBY')
+
+      if (hasOnlyRubyChild) {
+        elements.push(element)
+        return
+      }
+
+      if (flattenCompletely) {
+        // 处理完全展平逻辑
+        const currentClass = (node as HTMLElement).className || ''
+        const sanitizedClass = currentClass.replace(/[^a-zA-Z0-9_-]/g, '-').replace(/^-+|-+$/g, '')
+
+        const classPath = parentClassPath ? `${parentClassPath}__${sanitizedClass}` : sanitizedClass
 
         if (classPath) {
-          // 添加嵌套标识类，不影响原有类名
-          element.classList.add(`parent-${classPath}`)
+          element.className = `${element.className} parent-${classPath}`
         }
 
-        // 添加当前子节点到结果
-        elements.push(element)
-
-        // 递归处理子节点，传递当前类路径
+        const clonedElement = element.cloneNode(false) as HTMLElement // 浅克隆移除子节点
+        clonedElement.innerText = getParentTextContent(element)
+        elements.push(clonedElement)
         elements.push(...flattenDOM(element, flattenCompletely, classPath))
       } else {
         // 保留嵌套关系，仅添加母节点本身
@@ -441,7 +475,7 @@ const getPages = (elements?: HTMLElement[]): HTMLElement[][] => {
 
 const renderPage = (pageIndex: number) => {
   console.log('启动渲染任务')
-  const contentContainer = shadowRoot.value?.querySelector('#content-container') as HTMLElement
+  const contentContainer = <HTMLElement>readerContainer.value
   contentContainer.innerHTML = ''
   if (pages.value === undefined) return
   const subPage = pages.value[pageIndex]
@@ -505,6 +539,17 @@ watch([fontSize, headingFontSize, maxHeight, readerWidth, flag_high_level_paged_
   showPage() // 页面更新
 })
 
+// 使用 ResizeObserver 监控元素的尺寸变化
+const updateWidth = () => {
+  if (patchouliReader.value) {
+    readerWidth.value = patchouliReader.value.offsetWidth
+    if (last_reader_width.value !== readerWidth.value) {
+      console.log('阅读器宽度改变')
+    }
+    console.log('Element Width:', readerWidth.value)
+  }
+}
+
 const cloneHTMLElementList = (elements: HTMLElement[]): HTMLElement[] =>
   elements.map((el) => el.cloneNode(true) as HTMLElement)
 
@@ -516,8 +561,14 @@ const showPage = (pageIndex?: number) => {
   console.log('字体大小注入完成')
   hiddenContainer.value.style.width = `${readerWidth.value}px`
   readerContainer.value.style.width = `${readerWidth.value}px`
-  hiddenContainer.value.style.height = '600px'
-  readerContainer.value.style.height = '600px'
+  console.log(maxHeight.value, 'px')
+  if (flag_single_page_mode.value) {
+    pageIndex = 0
+    readerContainer.value.style.height = 'auto'
+  } else {
+    readerContainer.value.style.height = `${maxHeight.value}px`
+  }
+
   // pages.value = getPages(rawElements.value as HTMLElement[]);
   const temp = cloneHTMLElementList(rawElements.value as HTMLElement[])
   console.log('准备进行分页处理')
@@ -533,9 +584,6 @@ const showPage = (pageIndex?: number) => {
       // 如果总页数小于等于1，则始终在第0页
       pageIndex = 0
     }
-  }
-  if (flag_single_page_mode.value) {
-    pageIndex = 0
   }
   if (pageIndex === undefined) {
     pageIndex = 0
@@ -575,7 +623,94 @@ const deepClone = <T>(obj: T): T => {
   return obj
 }
 
-const initReader = () => {
+/**
+ * 等待 CSS 应用完成
+ * 通过注入并检测CSS元素是否对测试DIV生效的方法来同步css和js引擎
+ * @param shadowRoot
+ * @param cssRules
+ * @param originalSize
+ * @param timeout
+ * @param interval
+ */
+const waitForCSSApplication = (
+  shadowRoot: ShadowRoot,
+  cssRules: string,
+  originalSize = '16px',
+  timeout = 3000,
+  interval = 50
+): Promise<boolean> => {
+  return new Promise((resolve, reject) => {
+    // 获取当前计数并分配唯一 ID
+    const currentCounter = globalTestDivCounter.value++
+    const uniqueId = `__test_div_${currentCounter}__`
+
+    // 检查是否已存在同名元素，避免冲突
+    if (shadowRoot.querySelector(`#${uniqueId}`)) {
+      reject(new Error(`Element with ID '${uniqueId}' already exists in ShadowRoot.`))
+      globalTestDivCounter.value-- // 回收计数
+      return
+    }
+
+    // 创建测试容器
+    const testDiv = document.createElement('div')
+    testDiv.id = uniqueId
+    testDiv.style.fontSize = originalSize
+    testDiv.style.position = 'absolute'
+    testDiv.innerText = '__TEST_DIV__'
+    testDiv.style.visibility = 'hidden'
+    shadowRoot.appendChild(testDiv)
+
+    // 注入 CSS 样式
+    const styleElement = document.createElement('style')
+    styleElement.textContent = cssRules.replace(/#test-div/g, `#${uniqueId}`)
+    shadowRoot.appendChild(styleElement)
+
+    // 开始轮询检测
+    const startTime = Date.now()
+    const checkFontSize = () => {
+      const appliedSize = getComputedStyle(testDiv).fontSize
+
+      if (appliedSize !== originalSize) {
+        // 样式已生效
+        shadowRoot.removeChild(testDiv)
+        shadowRoot.removeChild(styleElement)
+        globalTestDivCounter.value-- // 回收计数
+        resolve(true)
+      } else if (Date.now() - startTime > timeout) {
+        // 超时
+        shadowRoot.removeChild(testDiv)
+        shadowRoot.removeChild(styleElement)
+        globalTestDivCounter.value-- // 回收计数
+        reject(new Error('CSS application timeout'))
+      } else {
+        // 继续检测
+        setTimeout(checkFontSize, interval)
+      }
+    }
+
+    checkFontSize()
+  })
+}
+
+/**
+ * 初始化并等待CSS与JS同步
+ * @param shadowRoot
+ */
+const initAndTestCSSApplication = async (shadowRoot: ShadowRoot): Promise<void> => {
+  try {
+    const cssRules = `
+      #test-div {
+          font-size: 50px !important; /* 新的字体大小 */
+      }
+    `
+    await waitForCSSApplication(shadowRoot, cssRules)
+    console.log('CSS 已成功应用！')
+  } catch (error) {
+    console.error('CSS 应用失败：', error)
+  }
+}
+
+const initReader = async () => {
   if (patchouliContent.value === undefined) return
 
   // 创建 Shadow DOM
@@ -587,12 +722,14 @@ const initReader = () => {
   hiddenContainer.value.id = 'taster-container'
   hiddenContainer.value.style.height = 'auto'
   hiddenContainer.value.style.width = `${readerWidth.value}px`
+  // hiddenContainer.value.style.width = '100vw'
   shadowRoot.value.appendChild(hiddenContainer.value)
 
   // 创建内容容器
   readerContainer.value = document.createElement('div')
   readerContainer.value.id = 'content-container'
   readerContainer.value.style.width = `${readerWidth.value}px`
+  // readerContainer.value.style.width = '100vw'
   shadowRoot.value.appendChild(readerContainer.value)
 
   // 注入 CSS 样式，限制图片高度
@@ -602,6 +739,8 @@ const initReader = () => {
       max-height: 100%; /* 图片最大高度不超过容器 */
       max-width: 100%; /* 图片宽度自适应容器 */
       object-fit: contain; /* 等比缩放 */
+      margin: 0 auto;
+      display: block;
     }
     illus {
       max-height: 100%; /* 图片最大高度不超过容器 */
@@ -615,38 +754,40 @@ const initReader = () => {
     }
   `
   shadowRoot.value.appendChild(style)
+  // await waitForStyle(shadowRoot.value) //
+  await initAndTestCSSApplication(shadowRoot.value)
+  //! 通过注入并检测CSS元素是否对测试DIV生效的方法来同步css和js引擎
+  return Promise.resolve()
 }
 
-function ensureCompleteHTML(htmlText) {
+const ensureCompleteHTML = (htmlText: string): string => {
   // 确保输入是字符串
   if (typeof htmlText !== 'string') {
     throw new Error('Input must be a string')
   }
 
-  let hasHtmlTag = /<html[\s\S]*?>/i.test(htmlText)
-  let hasHeadTag = /<head[\s\S]*?>/i.test(htmlText)
-  let hasBodyTag = /<body[\s\S]*?>/i.test(htmlText)
+  const hasHtmlTag = /<html[\s\S]*?>/i.test(htmlText)
+  const hasHeadTag = /<head[\s\S]*?>/i.test(htmlText)
+  const hasBodyTag = /<body[\s\S]*?>/i.test(htmlText)
 
-  // 如果没有 <html> 标签
   if (!hasHtmlTag) {
-    // 检查是否包含其他 HTML 标签
+    // 如果没有 <html> 标签
     const containsHTMLTags = /<\w+[\s\S]*?>/i.test(htmlText)
-
     if (containsHTMLTags) {
-      // 如果包含其他 HTML 标签，则包裹在 <html> 和 <body> 中
+      // 包裹在 <html> 和 <body> 中
       htmlText = `<!DOCTYPE html><html><head></head><body>${htmlText}</body></html>`
     } else {
-      // 如果没有任何标签，直接补全空的 HTML 结构
+      // 补全空的 HTML 结构
       htmlText = `<!DOCTYPE html><html><head></head><body>${htmlText}</body></html>`
     }
   } else {
     // 如果有 <html>，但没有 <head>
     if (!hasHeadTag) {
       if (hasBodyTag) {
-        // 有 <body> 的情况，在 <body> 前补充 <head>
+        // 有 <body>，在 <body> 前补充 <head>
         htmlText = htmlText.replace(/<body[\s\S]*?>/i, (match) => `<head></head>${match}`)
       } else {
-        // 没有 <body> 的情况，在 <html> 后插入 <head> 和 <body>
+        // 没有 <body>，在 <html> 后插入 <head> 和 <body>
         htmlText = htmlText.replace(/<html[\s\S]*?>/i, (match) => `${match}<head></head><body>`)
         htmlText += '</body>'
       }
@@ -655,7 +796,7 @@ function ensureCompleteHTML(htmlText) {
     // 如果没有 <body>，在 </head> 后插入 <body>
     if (!hasBodyTag) {
       htmlText = htmlText.replace(/<\/head>/i, (match) => `${match}<body>`)
-      htmlText += '</body>' // 补充 <body> 尾
+      htmlText += '</body>'
     }
   }
 
@@ -693,7 +834,7 @@ const parseHTML = (text) => {
 const loadContent = async (): Promise<void> => {
   try {
     const text = ensureCompleteHTML(props.html)
-    console.log(text)
+    // console.log(text)
 
     // 解析 HTML
     // const parser = new DOMParser()
@@ -703,7 +844,7 @@ const loadContent = async (): Promise<void> => {
     // const targetDiv = tempDiv.querySelector('div');
     // console.log(targetDiv);
     const doc = parseHTML(text)
-    console.log(doc)
+    // console.log(doc)
 
     // 更新页面标题
     const title = doc.querySelector('title')?.innerText
@@ -736,34 +877,48 @@ const loadContent = async (): Promise<void> => {
       throw new Error('readerContainer 未初始化')
     }
 
-    // 设置内容到阅读容器
-    const bodyContent = doc.querySelector('body')?.innerHTML || ''
-    readerContainer.value.innerHTML = bodyContent
+    // 创建一个空白的 div 容器
+    const tempContainer = document.createElement('div')
 
-    // 克隆 DOM 并展平为元素列表
-    const clonedContent = readerContainer.value.cloneNode(true) as HTMLElement
-    rawElements.value = flattenDOM(clonedContent, flag_flatten_DOM.value)
+    // 设置内容到空白 div
+    const bodyContent = doc.querySelector('body')?.innerHTML || ''
+    tempContainer.innerHTML = bodyContent
+
+    // 克隆空白 div 并展平为元素列表
+    rawDOMtree.value = tempContainer.cloneNode(true) as HTMLElement
+    rawElements.value = flattenDOM(rawDOMtree.value, flag_flatten_DOM.value)
+    // console.log(rawElements.value)
     console.log('html加载成功')
+    await initAndTestCSSApplication(shadowRoot.value)
+    //! 通过注入并检测CSS元素是否对测试DIV生效的方法来同步css和js引擎
+    return Promise.resolve()
   } catch (error) {
     console.error('加载内容失败:', error)
     console.error(error)
+    return Promise.resolve()
   }
 }
 
 // 生命周期钩子
 onMounted(async () => {
-  initReader() //! 初始化未受 Vue 托管的 DOM 树
+  await initReader() //! 初始化未受 Vue 托管的 DOM 树
   await loadContent() //! 加载内容
   nextTick(() => {
     // 设置尺寸并绑定事件
     if (patchouliReader.value) {
       readerWidth.value = patchouliReader.value.offsetWidth
+      last_reader_width.value = readerWidth.value
       maxHeight.value = patchouliReader.value.offsetHeight
     }
     window.addEventListener('resize', handleResize)
     window.addEventListener('wheel', handleWheel)
+    resizeObserver.value = new ResizeObserver(updateWidth)
+    if (patchouliReader.value) {
+      resizeObserver.value.observe(patchouliReader.value)
+    }
     nextTick(() => {
-      showPage(0) //显示首页 不知道为什么 第一次预渲染不吃css
+      // document.body.offsetHeight // 强制浏览器重绘
+      showPage(0) //显示首页
     })
   })
 })
@@ -771,6 +926,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   window.removeEventListener('resize', handleResize)
   window.removeEventListener('wheel', handleWheel)
+  resizeObserver.value.disconnect()
 })
 
 defineExpose({ patchouliContent })
@@ -779,10 +935,10 @@ defineExpose({ patchouliContent })
 <style scoped>
 /* 页面的样式 */
 #patchouli-reader {
+  --offset: 0px;
   display: flex; /* 使用 flexbox 布局 */
   flex-direction: column; /* 垂直排列子元素 */
-  height: 100%; /* 让 #reader-app 占满父容器的高度 */
-  width: 90%; /* 让 #reader-app 占满父容器的宽度 */
+  height: calc(95vh - var(--offset));
 
   /* justify-content: center; 垂直居中 */
   align-items: center; /* 水平居中 */

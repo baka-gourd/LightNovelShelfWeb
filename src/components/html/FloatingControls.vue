@@ -1,8 +1,8 @@
 <template>
   <!-- 折叠按钮 -->
-  <button class="toggle-btn" @click.stop="toggleCollapse">
+  <!-- <button class="toggle-btn" @click.stop="toggleCollapse">
     {{ isCollapsed ? 'Expand' : 'Collapse' }}
-  </button>
+  </button> -->
   <div class="floating-controls" :class="{ collapsed: isCollapsed }" v-if="!isCollapsed" @click.stop>
     <!-- 翻页控件 -->
     <div class="pagination-panel">
@@ -13,7 +13,7 @@
         <div class="progress" :style="{ width: progress + '%' }"></div>
       </div>
       <div class="page-buttons">
-        <button @click.stop="prevPage" :disabled="currentPage === 0">Previous</button>
+        <button @click.stop="prevPage" :disabled="currentPage === 1">Previous</button>
         <button @click.stop="nextPage" :disabled="currentPage === totalPages">Next</button>
       </div>
     </div>
@@ -36,7 +36,7 @@
     <div>
       <!-- 模式切换按钮 -->
       <div class="mode-buttons">
-        <button @click.stop="onPagedModeClick">{{ text_paged_mode_bottom }}</button>
+        <button @click.stop="onPagedModeClick" :disabled="enable_single_page_mode">{{ text_paged_mode_bottom }}</button>
         <button @click.stop="onViewModeClick">{{ text_view_mode_bottom }}</button>
       </div>
       <!-- About Widget (图标和信息部分) -->
@@ -77,11 +77,16 @@ const props = defineProps({
 
 const headingFontSize: Ref<number> = defineModel<number>('headingFontSize', { required: true })
 const fontSize: Ref<number> = defineModel<number>('fontSize', { required: true })
-const isCollapsed = ref<boolean>(false) // 控制折叠状态
+const isCollapsed = ref<boolean>(true) // 控制折叠状态
 
 const text_paged_mode_bottom = computed(() =>
-  props.enable_high_level_paged_engine === true ? 'HighLevelPagedEngine' : 'LowLevelPagedEngine'
+  props.enable_single_page_mode
+    ? 'Raw'
+    : props.enable_high_level_paged_engine
+    ? 'HighLevelPagedEngine'
+    : 'LowLevelPagedEngine'
 )
+
 const text_view_mode_bottom = computed(() => (props.enable_single_page_mode === true ? 'SinglePage' : 'MultiPage'))
 
 watch([onReaderClick as Ref<boolean>], () => {
@@ -120,7 +125,7 @@ const toggleCollapse = () => {
 /*TODO 没居中*/
 .floating-controls {
   position: fixed;
-  bottom: 20px;
+  bottom: 10%;
   right: 20px;
   /* transform: translate(20px, 20px); */
   background-color: rgba(255, 255, 255, 0.9);
@@ -134,6 +139,7 @@ const toggleCollapse = () => {
   width: auto;
   height: auto;
   transition: transform 0.3s ease; /* 添加动画效果 */
+  font-family: "Arial, 'Microsoft YaHei', 'PingFang SC', 'STHeiti', 'SimSun', sans-serif";
 }
 
 .floating-controls.collapsed {

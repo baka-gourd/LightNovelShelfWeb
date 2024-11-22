@@ -24,7 +24,13 @@ export const useSettingStore = defineStore('app.setting', {
       showButton: true,
       tapToScroll: false,
       hideFullScreen: false,
-      readerMode: 'normal' as 'page' | 'page-2' | 'normal'
+      readerMode: 'normal' as 'page' | 'normal',
+      pageReader: {
+        splitMethod: 'classic' as 'classic' | 'advance',
+        splitMode: 'source-gen' as 'source-gen' | 'pointer',
+        enableTouchNavigation: true,
+        enableAutoNextChapter: true
+      }
     },
     editorSetting: {
       mode: 'html' as 'html' | 'markdown'
