@@ -34,6 +34,7 @@ import { onMounted, onBeforeUnmount, ref, computed, nextTick, watch, provide } f
 import { useLayout } from '../app/useLayout'
 import { useSettingStore } from 'src/stores/setting'
 import { PROVIDE } from 'src/const/provide'
+import { sleep } from 'src/utils/sleep'
 
 const globalTestDivCounter = ref(0)
 const rawDOMtree = ref<HTMLElement>()
@@ -52,6 +53,7 @@ const readProgress = ref(0) // 阅读进度
 const patchouliContent = ref<HTMLElement>()
 const readerContainer = ref<HTMLElement>()
 const patchouliReader = ref<HTMLElement>()
+const cacheContainer = ref<HTMLElement>()
 
 const touchStartX = ref(0)
 const touchEndX = ref(0)
@@ -71,16 +73,23 @@ const flag_single_page_mode = ref(false)
 // 启用激进分页模式 目前一直开着
 const flag_aggressive_paging_engine = ref(false)
 // 激进分页模式的阈值 小于这个就进行激进分页
-const aggressive_paging_threshold = 0.99 // 默认值为 0.9
+const aggressive_paging_threshold = 0.95 // 默认值为 0.9
 // 分页模式的阈值 小于这个就进行分页
-const paging_threshold = 0.99 // 默认值为 0.9
+const paging_threshold = 0.95 // 默认值为 0.9
 
 const flag_flatten_DOM = ref(true)
 // 依赖展平dom树的方法来实现渲染
 // TODO 应当实现一个不依赖dom展平的分页器
 
+const flag_auto_next = ref(true)
+// 允许自动切换章节
+
 const onReaderClick = ref(false)
 provide('PatchouliReader_onReaderClick', onReaderClick)
+
+const prevChapter = inject<() => void>('prevChapter')
+const nextChapter = inject<() => void>('nextChapter')
+const flag_auto_prev = inject<Ref<boolean>>('flag_auto_prev')
 
 const $q = useQuasar()
 const router = useRouter()
@@ -182,8 +191,8 @@ const handleClick = (event: MouseEvent) => {
 
   // 获取点击位置相对于组件的坐标
   const clickXInComponent = event.clientX - rect.left
-  console.log('clickX:', event.clientX)
-  console.log('clickXInComponent:', clickXInComponent)
+  // console.log('clickX:', event.clientX)
+  // console.log('clickXInComponent:', clickXInComponent)
 
   const edgeWidth = rect.width * 0.2 // 边缘区域为组件宽度的 20%
 
@@ -348,6 +357,68 @@ const cloneElementStyleAndClass = (element: HTMLElement): HTMLElement => {
 // const original = document.querySelector("p") as HTMLParagraphElement;
 // original && document.body.appendChild(cloneElementWithStyleAndClass(original)!);
 
+const waitForResourceSync = (htmlElement: HTMLElement, timeout = 5000) => {
+  // 检查是否传入有效的 HTMLElement
+  if (!htmlElement || !(htmlElement instanceof HTMLElement)) {
+    console.error('传入的对象不是有效的 HTML 元素')
+    return 'error'
+  }
+
+  // 检查是否为图片元素
+  if (htmlElement.tagName.toLowerCase() !== 'img') {
+    return 'success'
+  }
+
+  let flag = false // 标志变量，表示资源加载状态
+  let result = 'timeout' // 默认返回超时
+  const startTime = Date.now() // 记录开始时间
+
+  const wrappedWaitForResource = async () => {
+    if ((htmlElement as HTMLImageElement).complete) {
+      console.log('图片已经加载完成')
+      result = 'success' // 图片已经加载完成
+      flag = true
+      return
+    }
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        htmlElement.onload = () => {
+          console.log('图片加载成功')
+          resolve()
+        }
+        htmlElement.onerror = () => {
+          console.error('图片加载失败')
+          reject(new Error('图片加载失败'))
+        }
+      })
+      result = 'success' // 图片加载成功
+    } catch (err) {
+      console.error(err)
+      result = 'error' // 图片加载失败
+    } finally {
+      flag = true // 标记操作完成
+    }
+  }
+
+  // 调用异步函数
+  wrappedWaitForResource()
+
+  // 阻塞当前线程，轮询 flag 状态，并进行延迟
+  const delay = performance.now() // 记录延迟起始时间
+  while (!flag && Date.now() - startTime < timeout) {
+    // 添加微小延迟，防止完全占用主线程
+    while (performance.now() - delay < 1) {} // 延迟 20ms，减轻 CPU 负担
+  }
+
+  // 如果超时，返回超时状态
+  if (!flag) {
+    console.warn('资源加载超时')
+  }
+
+  return result // 返回最终状态
+}
+
 // 最简单的高阶切分算法 没考虑div套娃 需要更多高级切分算法做补充
 const getParagraphs_Simple = (element: HTMLElement): [HTMLElement, HTMLElement] | undefined => {
   const part1 = cloneElementStyleAndClass(element)
@@ -411,7 +482,13 @@ const getPages = (elements?: HTMLElement[]): HTMLElement[][] => {
       // console.log('正在分页 ', i, '/', end, ' 对象')
       // if (flag_high_level_paged) i--; // i++最先计算 发生插入后需要用这个修正？
       hiddenContainer.value?.appendChild(elements[i].cloneNode(true)) // 类型断言为 HTMLElement
-      const now_hight = (hiddenContainer.value as HTMLElement).scrollHeight
+      const image_load_status = waitForResourceSync(elements[i], 10) // 等待图片加载
+      // 没有图片或加载成功为 success 失败为 error 或者timeout 这里需要优化 避免循环查找
+      let now_hight = (hiddenContainer.value as HTMLElement).scrollHeight
+      if (image_load_status !== 'success') {
+        console.warn('图片加载出现异常')
+        now_hight = maxHeight.value // 强行结束这一页
+      }
       if (now_hight <= maxHeight.value * paging_threshold) {
         // 能塞得进去 往这一页里面塞东西
         currentPage.push(elements[i])
@@ -431,12 +508,19 @@ const getPages = (elements?: HTMLElement[]): HTMLElement[][] => {
           end++
         } else {
           // 结束一页 高级分页失败了也会回退到这里
+          let flag_img = false
           if (currentPage.length === 0) {
             // 高级分页引擎也无法处理的东西 比如说图片
             currentPage.push(elements[i])
+            flag_img = true
             i++
           }
-          pages.push(currentPage)
+          // console.log('high', now_hight)
+          if ((hiddenContainer.value as HTMLElement).scrollHeight !== 0 || flag_img === true) {
+            pages.push(currentPage)
+          } else {
+            console.log('存在空页 已剔除')
+          }
           currentPage = []
           ;(hiddenContainer.value as HTMLElement).innerHTML = ''
           flag_high_level_paged = false
@@ -494,12 +578,28 @@ const prevPage = () => {
     currentPage.value--
     renderPage(currentPage.value)
   }
+  if (currentPage.value === 0 && flag_auto_next.value) {
+    console.log('自动切换到上一章节')
+    flag_auto_prev.value = true
+    prevChapter()
+  }
 }
 
 const nextPage = () => {
   if (currentPage.value < totalPages.value - 1) {
+    // 继续翻页，渲染当前页
     currentPage.value++
     renderPage(currentPage.value)
+  } else if (currentPage.value === totalPages.value - 1) {
+    // 处理最后一页的显示逻辑
+    currentPage.value++
+    renderPage(currentPage.value)
+
+    // 自动切换章节（仅在自动切换标志为 true 时）
+    if (flag_auto_next.value) {
+      console.log('自动切换到下一章节')
+      nextChapter()
+    }
   }
 }
 
@@ -539,6 +639,7 @@ watch([fontSize, headingFontSize, maxHeight, readerWidth, flag_high_level_paged_
   showPage() // 页面更新
 })
 
+const first_update = ref(false)
 // 使用 ResizeObserver 监控元素的尺寸变化
 const updateWidth = () => {
   if (patchouliReader.value) {
@@ -548,6 +649,12 @@ const updateWidth = () => {
     }
     console.log('Element Width:', readerWidth.value)
   }
+  // if (first_update.value != true) {
+  //   console.log('first_update', first_update.value)
+  //   sleep(1000)
+  //   showPage(currentPage.value)
+  //   first_update.value = true
+  // }
 }
 
 const cloneHTMLElementList = (elements: HTMLElement[]): HTMLElement[] =>
@@ -557,10 +664,12 @@ const showPage = (pageIndex?: number) => {
   console.log('启动预渲染')
   if (hiddenContainer.value === undefined) return
   if (readerContainer.value === undefined) return
+  if (cacheContainer.value === undefined) return
   adjustFontSize()
   console.log('字体大小注入完成')
   hiddenContainer.value.style.width = `${readerWidth.value}px`
   readerContainer.value.style.width = `${readerWidth.value}px`
+  cacheContainer.value.style.width = `${readerWidth.value}px`
   console.log(maxHeight.value, 'px')
   if (flag_single_page_mode.value) {
     pageIndex = 0
@@ -573,6 +682,44 @@ const showPage = (pageIndex?: number) => {
   const temp = cloneHTMLElementList(rawElements.value as HTMLElement[])
   console.log('准备进行分页处理')
   pages.value = getPages(temp)
+
+  console.log(`本章节有${totalPages.value}页`)
+  // 处理负索引支持
+  if (pageIndex !== undefined) {
+    if (pageIndex < 0) {
+      pageIndex = totalPages.value + pageIndex // 负索引转换
+    }
+    if (pageIndex < 0 || pageIndex >= totalPages.value) {
+      console.error(`页索引 ${pageIndex} 超出范围`)
+      return
+    }
+  }
+  if (totalPages.value <= 0) {
+    // 检查 readerContainer 是否有效
+    if (!readerContainer.value) {
+      console.error('容器未初始化')
+      return
+    }
+    console.warn('章节为空')
+    // 清空容器内容
+    readerContainer.value.innerHTML = ''
+
+    // 创建新的 div 元素
+    const noContentDiv = document.createElement('div')
+    noContentDiv.textContent = '章节无内容' // 设置文本
+    noContentDiv.style.display = 'flex' // 使用 Flex 布局
+    noContentDiv.style.justifyContent = 'center' // 水平居中
+    noContentDiv.style.alignItems = 'center' // 垂直居中
+    noContentDiv.style.height = '100%' // 高度占满容器
+    // noContentDiv.style.fontSize = '50px !important' // 设置字体大小 不生效
+    noContentDiv.style.color = '#666' // 设置字体颜色
+    noContentDiv.style.fontFamily = 'sans-serif'
+
+    // 将新元素添加到容器
+    readerContainer.value.appendChild(noContentDiv)
+    return
+  }
+
   console.log('分页任务完成')
   if (pageIndex === undefined && flag_single_page_mode.value != true) {
     if (totalPages.value > 1) {
@@ -692,6 +839,7 @@ const waitForCSSApplication = (
   })
 }
 
+//! 这个函数是失败的 需要编写源生成器
 /**
  * 初始化并等待CSS与JS同步
  * @param shadowRoot
@@ -700,7 +848,7 @@ const initAndTestCSSApplication = async (shadowRoot: ShadowRoot): Promise<void> 
   try {
     const cssRules = `
       #test-div {
-          font-size: 50px !important; /* 新的字体大小 */
+          font-size: 50px !important;
       }
     `
     await waitForCSSApplication(shadowRoot, cssRules)
@@ -715,25 +863,9 @@ const initReader = async () => {
 
   // 创建 Shadow DOM
   shadowRoot.value = patchouliContent.value.attachShadow({ mode: 'open' })
-
-  // 创建隐藏容器
-  hiddenContainer.value = document.createElement('div')
-  hiddenContainer.value.style.position = 'absolute'
-  hiddenContainer.value.id = 'taster-container'
-  hiddenContainer.value.style.height = 'auto'
-  hiddenContainer.value.style.width = `${readerWidth.value}px`
-  // hiddenContainer.value.style.width = '100vw'
-  shadowRoot.value.appendChild(hiddenContainer.value)
-
-  // 创建内容容器
-  readerContainer.value = document.createElement('div')
-  readerContainer.value.id = 'content-container'
-  readerContainer.value.style.width = `${readerWidth.value}px`
-  // readerContainer.value.style.width = '100vw'
-  shadowRoot.value.appendChild(readerContainer.value)
-
   // 注入 CSS 样式，限制图片高度
   const style = document.createElement('style')
+  style.id = 'base-css'
   style.textContent = `
     img {
       max-height: 100%; /* 图片最大高度不超过容器 */
@@ -754,9 +886,36 @@ const initReader = async () => {
     }
   `
   shadowRoot.value.appendChild(style)
+
+  // 创建隐藏容器
+  hiddenContainer.value = document.createElement('div')
+  hiddenContainer.value.style.position = 'absolute'
+  hiddenContainer.value.id = 'taster-container'
+  hiddenContainer.value.style.height = 'auto'
+  hiddenContainer.value.style.width = `${readerWidth.value}px`
+  // hiddenContainer.value.style.width = '100vw'
+  shadowRoot.value.appendChild(hiddenContainer.value)
+
+  // 创建内容容器
+  readerContainer.value = document.createElement('div')
+  readerContainer.value.id = 'content-container'
+  readerContainer.value.style.width = `${readerWidth.value}px`
+  // readerContainer.value.style.display = 'none'
+  // readerContainer.value.style.width = '100vw'
+  shadowRoot.value.appendChild(readerContainer.value)
+
+  // 创建缓存容器
+  cacheContainer.value = document.createElement('div')
+  cacheContainer.value.id = 'cache-container'
+  cacheContainer.value.style.width = `${readerWidth.value}px`
+  cacheContainer.value.style.display = 'none'
+  cacheContainer.value.style.float = 'inherit'
+  shadowRoot.value.appendChild(cacheContainer.value)
+
   // await waitForStyle(shadowRoot.value) //
   await initAndTestCSSApplication(shadowRoot.value)
   //! 通过注入并检测CSS元素是否对测试DIV生效的方法来同步css和js引擎
+  // await sleep(500)
   return Promise.resolve()
 }
 
@@ -831,9 +990,117 @@ const parseHTML = (text) => {
   return fallbackDoc // 返回整个回退的 DOM 树
 }
 
+const fetchStylesheetSync = (url: string, seen: Set<string> = new Set()): string => {
+  if (seen.has(url)) {
+    console.warn(`Skipping duplicate stylesheet: ${url}`)
+    return ''
+  }
+  seen.add(url)
+
+  let cssText = ''
+  try {
+    const xhr = new XMLHttpRequest()
+    xhr.open('GET', url, false) // Synchronous request
+    xhr.send()
+
+    if (xhr.status >= 200 && xhr.status < 300) {
+      cssText = xhr.responseText
+
+      // Resolve nested @import rules
+      const importRegex = /@import\s+['"]([^'"]+)['"];/g
+      let match: RegExpExecArray | null
+
+      while ((match = importRegex.exec(cssText)) !== null) {
+        const importUrl = new URL(match[1], url).href // Resolve relative URLs
+        const nestedCSS = fetchStylesheetSync(importUrl, seen)
+        cssText = cssText.replace(match[0], nestedCSS) // Replace @import with actual content
+      }
+    } else {
+      console.error(`Failed to fetch stylesheet: ${url}, status: ${xhr.status}`)
+    }
+  } catch (error) {
+    console.error(`Error fetching stylesheet: ${url}`, error)
+  }
+
+  return cssText
+}
+
+const injectStyles = (doc: Document, shadowRoot: ShadowRoot) => {
+  const linkTags = doc.querySelectorAll('link[rel="stylesheet"]')
+
+  // Process each external stylesheet
+  for (const link of Array.from(linkTags)) {
+    const htmlLink = link as HTMLLinkElement
+    if (!shadowRoot.querySelector(`style[data-href="${htmlLink.href}"]`)) {
+      const cssText = fetchStylesheetSync(htmlLink.href)
+      if (cssText) {
+        const styleElement = document.createElement('style')
+        styleElement.textContent = cssText
+        styleElement.setAttribute('data-href', htmlLink.href)
+        shadowRoot.appendChild(styleElement)
+      }
+    }
+  }
+
+  // Process inline <style> tags
+  const styleTags = doc.querySelectorAll('style')
+  styleTags.forEach((style) => {
+    const styleElement = document.createElement('style')
+    styleElement.textContent = style.textContent || ''
+    shadowRoot.appendChild(styleElement)
+  })
+}
+
+function waitForImagesToLoad(tree: HTMLElement, timeoutPerImage = 3000, showMessageTime = 3000): Promise<void> {
+  const imageElements = tree.querySelectorAll('img')
+  const imageCount = imageElements.length
+
+  // 计算总超时时间
+  const totalTimeout = imageCount * timeoutPerImage
+
+  console.log(`发现 ${imageCount} 张图片，超时时间总计：${totalTimeout} ms`)
+  if (totalTimeout >= showMessageTime) {
+    const noContentDiv = document.createElement('div')
+    noContentDiv.textContent = `正在加载图片\n预计最长加载时间 ${totalTimeout / 1000}S`
+    noContentDiv.style.whiteSpace = 'pre-wrap'
+    noContentDiv.style.display = 'flex' // 使用 Flex 布局
+    noContentDiv.style.flexDirection = 'column' // 垂直排列
+    noContentDiv.style.justifyContent = 'center' // 垂直居中
+    noContentDiv.style.alignItems = 'center' // 水平居中
+    noContentDiv.style.textAlign = 'center' // 文本居中对齐
+    noContentDiv.style.height = '100%' // 高度占满容器
+    // noContentDiv.style.fontSize = '50px !important' // 设置字体大小 不生效
+    noContentDiv.style.color = '#666' // 设置字体颜色
+    noContentDiv.style.fontFamily = 'sans-serif'
+
+    // 将新元素添加到容器
+    ;(<HTMLElement>readerContainer.value).appendChild(noContentDiv)
+  }
+
+  // 创建每张图片的加载或失败 Promise
+  const loadPromises = Array.from(imageElements).map((image) => {
+    return new Promise<void>((resolve) => {
+      if (image.complete) {
+        console.log(`图片预加载成功：${image.src}`)
+        resolve()
+      } else {
+        image.onload = () => resolve()
+        image.onerror = () => resolve() // 图片加载失败时也继续
+      }
+    })
+  })
+
+  // 等待所有图片加载完成或总超时时间到达
+  return Promise.race([
+    Promise.all(loadPromises).then(() => undefined),
+    new Promise<void>((resolve) => setTimeout(resolve, totalTimeout))
+  ])
+}
+
 const loadContent = async (): Promise<void> => {
   try {
     const text = ensureCompleteHTML(props.html)
+
     // console.log(text)
 
     // 解析 HTML
@@ -846,6 +1113,30 @@ const loadContent = async (): Promise<void> => {
     const doc = parseHTML(text)
     // console.log(doc)
 
+    const images = doc.querySelectorAll('img') // 获取所有 img 元素
+    // 创建一个新的容器用于存放处理后的图片
+    const newTree = document.createElement('div')
+    images.forEach((img) => {
+      // 创建一个新的图片元素
+      const newImg = document.createElement('img')
+
+      // 设置图片的 src 和大小
+      newImg.src = img.src
+      newImg.style.width = '150px'
+      newImg.style.height = '150px'
+
+      // 添加到新树
+      newTree.appendChild(newImg)
+    })
+
+    //逆天缓存
+    if (cacheContainer.value !== undefined) {
+      cacheContainer.value.appendChild(newTree)
+    }
+    console.log('等待图片预加载')
+    await waitForImagesToLoad(newTree, 500)
+    console.log('图片预加载任务完成')
+
     // 更新页面标题
     const title = doc.querySelector('title')?.innerText
     if (title) {
@@ -853,16 +1144,19 @@ const loadContent = async (): Promise<void> => {
     }
 
     // 添加 <link> 样式表
-    const linkTags = doc.querySelectorAll('link[rel="stylesheet"]')
-    linkTags.forEach((link) => {
-      const htmlLink = link as HTMLLinkElement
-      if (!shadowRoot.value?.querySelector(`link[href="${htmlLink.href}"]`)) {
-        const newLink = document.createElement('link')
-        newLink.rel = 'stylesheet'
-        newLink.href = htmlLink.href
-        shadowRoot.value?.appendChild(newLink)
-      }
-    })
+    // const linkTags = doc.querySelectorAll('link[rel="stylesheet"]')
+    // linkTags.forEach((link) => {
+    //   const htmlLink = link as HTMLLinkElement
+    //   if (!shadowRoot.value?.querySelector(`link[href="${htmlLink.href}"]`)) {
+    //     const newLink = document.createElement('link')
+    //     newLink.rel = 'stylesheet'
+    //     newLink.href = htmlLink.href
+    //     shadowRoot.value?.appendChild(newLink)
+    //   }
+    // })
+    if (shadowRoot.value) {
+      injectStyles(doc, shadowRoot.value)
+    }
 
     // 添加内联样式 <style>
     const styleTags = doc.querySelectorAll('style')
@@ -889,7 +1183,7 @@ const loadContent = async (): Promise<void> => {
     rawElements.value = flattenDOM(rawDOMtree.value, flag_flatten_DOM.value)
     // console.log(rawElements.value)
     console.log('html加载成功')
-    await initAndTestCSSApplication(shadowRoot.value)
+    await initAndTestCSSApplication(<ShadowRoot>shadowRoot.value)
     //! 通过注入并检测CSS元素是否对测试DIV生效的方法来同步css和js引擎
     return Promise.resolve()
   } catch (error) {
@@ -902,7 +1196,7 @@ const loadContent = async (): Promise<void> => {
 // 生命周期钩子
 onMounted(async () => {
   await initReader() //! 初始化未受 Vue 托管的 DOM 树
-  await loadContent() //! 加载内容
+  // await sleep(1500)
   nextTick(() => {
     // 设置尺寸并绑定事件
     if (patchouliReader.value) {
@@ -916,17 +1210,31 @@ onMounted(async () => {
     if (patchouliReader.value) {
       resizeObserver.value.observe(patchouliReader.value)
     }
-    nextTick(() => {
-      // document.body.offsetHeight // 强制浏览器重绘
-      showPage(0) //显示首页
-    })
   })
+  await loadContent() //! 加载内容
+  // flag_single_page_mode.value = true
+  // showPage(0) //显示首页
+  // flag_single_page_mode.value = false
+  // // showPage(0) //显示首页
+  // await sleep(3000)
+  if (flag_auto_prev.value) {
+    showPage(-1)
+    flag_auto_prev.value = false
+  } else {
+    showPage(0)
+  }
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', handleResize)
   window.removeEventListener('wheel', handleWheel)
-  resizeObserver.value.disconnect()
+  if (resizeObserver.value !== undefined) resizeObserver.value.disconnect()
+})
+
+onDeactivated(() => {
+  window.removeEventListener('resize', handleResize)
+  window.removeEventListener('wheel', handleWheel)
+  if (resizeObserver.value !== undefined) resizeObserver.value.disconnect()
 })
 
 defineExpose({ patchouliContent })
