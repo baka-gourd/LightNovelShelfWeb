@@ -209,6 +209,7 @@ const getContent = useTimeoutFn(async () => {
       color: 'purple',
       timeout: 1500
     })
+    window.document.title = `轻书架 - ${chapter.value['Title']}`
     ;(async () => {
       if (res.ReadPosition && res.ReadPosition.Cid === res.Chapter.Id) {
         await delay(200)
@@ -295,6 +296,10 @@ const prev = debounce(() => {
 function back() {
   router.push({ name: 'BookInfo', params: { bid: bid.value } })
 }
+const flag_auto_prev = ref(false)
+provide('flag_auto_prev', flag_auto_prev)
+provide('prevChapter', prev)
+provide('nextChapter', next)
 
 function manageKeydown(event: KeyboardEvent) {
   if (imagePreview.isShow) return // 显示图片时不予响应
