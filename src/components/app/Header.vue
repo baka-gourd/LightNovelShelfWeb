@@ -1,9 +1,10 @@
 <template>
   <q-header
     :reveal="reveal"
-    elevated
+    :elevated="!generalSetting.eInkMode"
     :class="($q.dark.isActive ? 'bg-blue-grey-10' : '') + ' q-py-xs'"
     :height-hint="headerHeight"
+    v-model="show"
   >
     <q-toolbar>
       <q-btn flat dense round aria-label="Menu" :icon="icon.mdiMenu" @click="siderShow = !siderShow" />
@@ -16,7 +17,7 @@
         <div class="row flex-center">
           <q-icon size="24px" name="svguse:icons.svg#book" />
         </div>
-        <q-toolbar-title shrink @click="changAppName">
+        <q-toolbar-title shrink @click="handleClick">
           {{ appName }}
         </q-toolbar-title>
       </div>
@@ -184,13 +185,16 @@ import { useQuasar } from 'quasar'
 import { rebootSignalr } from 'src/services/internal/request'
 import { useRoute, useRouter } from 'vue-router'
 import SearchInput from '../SearchInput.vue'
+import { useSettingStore } from 'src/stores/setting'
 
 const route = useRoute()
 
 const hideSearchBar = computed(() => route.meta.hideSearchBar)
 
+const show = ref(true)
 const $q = useQuasar()
 const appStore = useAppStore()
+const { generalSetting } = useSettingStore()
 const layout = useLayout()
 const { appName, user } = storeToRefs(appStore)
 const { siderShow, headerHeight, siderBreakpoint } = layout
@@ -241,6 +245,15 @@ function onSearch(keyWords: string, exact: boolean) {
   router.push({ name: 'Search', params: { keyWords: keyWords }, query: { exact: exact ? '1' : '' } })
   searchKey.value = ''
 }
+
+function handleClick() {
+  if (!generalSetting.eInkMode) {
+    changAppName()
+  } else {
+    show.value = false
+  }
+}
+
 function changAppName() {
   appStore.asyncReverse()
 }
