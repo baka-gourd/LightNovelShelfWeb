@@ -42,7 +42,8 @@
       </template>
       <template #loading>
         <div class="row justify-center q-my-md">
-          <q-spinner-dots color="primary" size="40px" />
+          <q-spinner-dots v-if="!generalSetting.eInkMode" color="primary" size="40px" />
+          <p v-else class="text-subtitle1">加载中……</p>
         </div>
       </template>
     </q-infinite-scroll>
@@ -58,6 +59,7 @@ import BookCard from 'components/BookCard.vue'
 import { BookInList } from 'src/services/book/types'
 import { useRouter } from 'vue-router'
 import SearchInput from 'components/SearchInput.vue'
+import { useSettingStore } from 'src/stores/setting'
 
 const router = useRouter()
 const route = useRoute()
@@ -68,6 +70,7 @@ const scrollEleInstanceRef = ref<null | {
   poll(): void
 }>(null)
 const loading = ref(false)
+const { generalSetting } = useSettingStore()
 
 /** 移除精确搜索的双引号 */
 function getTrimmedKeyword(str: string) {

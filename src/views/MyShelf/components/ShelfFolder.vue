@@ -11,6 +11,7 @@
                 :key="item.Id"
                 :src="item.Cover"
                 :ratio="2 / 3"
+                :no-spinner="generalSetting.eInkMode"
               >
                 <template v-if="item.Placeholder && generalSetting.enableBlurHash" v-slot:loading>
                   <blur-hash :blurhash="item.Placeholder" />

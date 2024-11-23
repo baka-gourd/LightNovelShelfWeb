@@ -5,7 +5,7 @@
         <q-grid x-gap="24" y-gap="6" cols="3" xs="1" sm="2" md="2">
           <q-grid-item>
             <q-card>
-              <q-img v-if="isActive" :src="book.Cover" :ratio="2 / 3">
+              <q-img v-if="isActive" :src="book.Cover" :ratio="2 / 3" :no-spinner="generalSetting.eInkMode">
                 <div class="absolute-bottom bottom-shadow">
                   <div class="row">
                     <div class="row flex-align-center q-gutter-xs">

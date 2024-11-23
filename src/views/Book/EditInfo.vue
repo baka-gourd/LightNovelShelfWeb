@@ -5,7 +5,7 @@
         <div class="q-gutter-sm">
           <div class="text-opacity">封面预览</div>
           <q-card>
-            <q-img v-if="book?.Cover" :src="book['Cover']" :ratio="2 / 3">
+            <q-img v-if="book?.Cover" :src="book['Cover']" :ratio="2 / 3" :no-spinner="generalSetting.eInkMode">
               <template v-if="book?.Placeholder && generalSetting.enableBlurHash" v-slot:loading>
                 <blur-hash :blurhash="book.Placeholder" />
               </template>

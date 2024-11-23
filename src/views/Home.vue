@@ -17,7 +17,8 @@
 
           <q-card-section>
             <div v-if="loading" style="height: 572px" class="row flex-center">
-              <q-spinner color="primary" size="40px" />
+              <q-spinner v-if="!settingStore.generalSetting.eInkMode" color="primary" size="40px" />
+              <p v-else class="text-subtitle1">加载中……</p>
             </div>
             <q-grid v-else cols="3" x-gap="8" y-gap="8">
               <q-grid-item v-for="(book, index) in bookData" :key="index">
@@ -32,7 +33,8 @@
             <div class="title text-h6">网站统计</div>
           </q-card-section>
           <div v-if="loading" class="row flex-center" style="height: 70px; padding-top: 0">
-            <q-spinner-dots color="primary" size="40px" />
+            <q-spinner-dots v-if="!settingStore.generalSetting.eInkMode" color="primary" size="40px" />
+            <p v-else class="text-subtitle1">加载中……</p>
           </div>
           <q-card-section v-else style="padding-top: 0">
             <div class="content row full-width">
@@ -87,7 +89,8 @@
                 </q-item>
               </q-list>
               <div v-else class="row flex-center" style="height: 240px">
-                <q-spinner color="primary" size="40px" />
+                <q-spinner v-if="!settingStore.generalSetting.eInkMode" color="primary" size="40px" />
+                <p v-else class="text-subtitle1">加载中……</p>
               </div>
             </q-card>
           </q-grid-item>
@@ -143,7 +146,8 @@
               <q-separator />
               <q-card-section>
                 <div v-if="loading" class="row flex-center">
-                  <q-spinner-dots color="primary" size="40px" />
+                  <q-spinner-dots v-if="!settingStore.generalSetting.eInkMode" color="primary" size="40px" />
+                  <p v-else class="text-subtitle1">加载中……</p>
                 </div>
                 <div v-else>
                   <q-avatar

@@ -35,7 +35,8 @@
       </q-list>
       <template v-slot:loading>
         <div class="row justify-center q-my-md">
-          <q-spinner-dots color="primary" size="40px" />
+          <q-spinner-dots v-if="!generalSetting.eInkMode" color="primary" size="40px" />
+          <p v-else class="text-subtitle1">加载中……</p>
         </div>
       </template>
     </q-infinite-scroll>
@@ -47,11 +48,13 @@ import { reactive, ref } from 'vue'
 import { getAnnouncementList } from 'src/services/context'
 import { announcementListFormat, Announcement } from './announcementFormat'
 import { icon } from 'assets/icon'
+import { useSettingStore } from 'src/stores/setting'
 
 let announcementList = reactive<Announcement[]>([])
 let size = 24
 
 const scroll = ref(null)
+const { generalSetting } = useSettingStore()
 
 // 滚动拉取数据
 function onLoad(index, done) {

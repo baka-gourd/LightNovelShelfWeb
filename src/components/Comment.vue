@@ -29,7 +29,8 @@
 
       <template v-if="!isActive">
         <div class="row flex-center">
-          <q-spinner-dots color="primary" size="40px" />
+          <q-spinner-dots v-if="!generalSetting.eInkMode" color="primary" size="40px" />
+          <p v-else class="text-subtitle1">加载中……</p>
         </div>
       </template>
 
@@ -199,12 +200,14 @@ import { useInitRequest } from 'src/composition/biz/useInitRequest'
 import { useQuasar } from 'quasar'
 import { icon } from 'assets/icon'
 import { getErrMsg } from 'src/utils/getErrMsg'
+import { useSettingStore } from 'src/stores/setting'
 
 const props = defineProps<{ type: CommentType; id: number }>()
 const $q = useQuasar()
 const appStore = useAppStore()
 const { user } = storeToRefs(appStore)
 const comment = ref<GetComment.Response>()
+const { generalSetting } = useSettingStore()
 
 const isActive = computed(
   () => comment.value?.Type === props.type && comment.value?.Id === props.id && currentPage.value === comment.value.Page
