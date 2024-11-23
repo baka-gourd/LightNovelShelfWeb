@@ -124,6 +124,7 @@ const toggleCollapse = () => {
 <style scoped>
 /*TODO 没居中*/
 .floating-controls {
+  font-size: 16px;
   position: fixed;
   bottom: 10%;
   right: 20px;

@@ -63,7 +63,7 @@ const LONG_PRESS_THRESHOLD = ref(500) // 长按阈值（毫秒）
 const totalPages = computed(() => pages.value.length)
 const displayReadProgress = computed(() => readProgress.value * 100)
 
-let resizeObserver = ref<ResizeObserver>()
+const resizeObserver = ref<ResizeObserver>()
 
 // 高阶分页支持
 const flag_high_level_paged_engine = ref(true)
@@ -98,10 +98,11 @@ const settingStore = useSettingStore()
 const imagePreview = inject<any>(PROVIDE.IMAGE_PREVIEW)
 
 const { headerOffset } = layout
-const { readSetting } = settingStore
 
 const props = defineProps<{ html: string }>()
 const viewerRef = ref<HTMLElement>()
+
+const { generalSetting, readSetting } = settingStore // 引入setting用于控制图片自定义占位符
 
 function getElement(event: Event) {
   let target = <Node>event.target
@@ -419,11 +420,14 @@ const waitForResourceSync = (htmlElement: HTMLElement, timeout = 5000) => {
   return result // 返回最终状态
 }
 
+const hasOnlyText = (element: HTMLElement) =>
+  element.childNodes.length === 1 && element.childNodes[0].nodeType === Node.TEXT_NODE
+
 // 最简单的高阶切分算法 没考虑div套娃 需要更多高级切分算法做补充
 const getParagraphs_Simple = (element: HTMLElement): [HTMLElement, HTMLElement] | undefined => {
   const part1 = cloneElementStyleAndClass(element)
   const part2 = cloneElementStyleAndClass(element)
-  if (element.hasChildNodes() || element.tagName.toLowerCase() === 'img') {
+  if (!hasOnlyText(element) || element.tagName.toLowerCase() === 'img') {
     return undefined
   }
 
@@ -635,8 +639,20 @@ const adjustFontSize = () => {
   `
 }
 
-watch([fontSize, headingFontSize, maxHeight, readerWidth, flag_high_level_paged_engine, flag_single_page_mode], () => {
+watch([headingFontSize, maxHeight, readerWidth, flag_high_level_paged_engine, flag_single_page_mode], () => {
   showPage() // 页面更新
+})
+
+watch([fontSize], () => {
+  if (readSetting.fontSize !== fontSize.value) {
+    readSetting.fontSize = fontSize.value
+  }
+  showPage()
+})
+
+watch([readSetting.fontSize], () => {
+  fontSize.value = readSetting.fontSize
+  showPage()
 })
 
 const first_update = ref(false)
@@ -1192,6 +1208,10 @@ const loadContent = async (): Promise<void> => {
     return Promise.resolve()
   }
 }
+
+onBeforeMount(() => {
+  fontSize.value = readSetting.fontSize
+})
 
 // 生命周期钩子
 onMounted(async () => {
