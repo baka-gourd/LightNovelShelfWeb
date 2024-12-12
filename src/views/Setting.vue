@@ -60,7 +60,7 @@
                 <div class="q-gutter-xs bg-radio">
                   <div class="text-subtitle1">分页方式</div>
                   <q-radio v-model="readSetting.pageReader.splitMode" val="source-gen" label="源生成" />
-                  <q-radio v-model="readSetting.pageReader.splitMode" val="pointer" label="指针" disable />
+                  <q-radio v-model="readSetting.pageReader.splitMode" val="pointer" label="指针" />
                 </div>
                 <q-separator />
                 <div class="text-subtitle1">选项</div>
